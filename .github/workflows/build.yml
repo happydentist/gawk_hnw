@@ -1,4 +1,4 @@
-name: build-gawk-windows
+name: build-gawk-windows-x64
 
 on:
   workflow_dispatch:
@@ -18,17 +18,10 @@ env:
 
 jobs:
   # =================================================================
-  # Windows 平台編譯 Job
+  # Windows x86_64 平台編譯 Job
   # =================================================================
   build-windows:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { target: x86_64-windows, runner: windows-latest, arch: x86_64 }
-          - { target: aarch64-windows, runner: windows-11-arm, arch: aarch64 }
-    runs-on: ${{ matrix.runner }}
-    continue-on-error: ${{ matrix.target == 'aarch64-windows' }}
+    runs-on: windows-latest
     steps:
       - name: Checkout wrapper scripts
         uses: actions/checkout@v4
@@ -43,19 +36,21 @@ jobs:
             git autoconf automake libtool make base-devel bison gettext gettext-devel xz zip
             mingw-w64-x86_64-toolchain
 
-      # 💡 關鍵修正：拋棄不穩定的 git clone。直接用 curl 下載官方原始碼壓縮包，100% 不會斷線或解析錯誤！
+      # 💡 透過 env 區塊傳遞變數，防止 msys2 大括號語法衝突
       - name: Download and Extract GNU Awk source
         shell: msys2 {0}
+        env:
+          G_VER: ${{ env.GAWK_VERSION }}
         run: |
           mkdir -p upstream
-          echo "正在從 GNU FTP 下載 gawk-${{ env.GAWK_VERSION }}.tar.gz..."
-          curl -sSL "https://gnu.org{{ env.GAWK_VERSION }}.tar.gz" -o gawk-src.tar.gz
+          echo "正在從 GNU FTP 下載 gawk-${G_VER}.tar.gz..."
+          curl -sSL "https://gnu.org{G_VER}.tar.gz" -o gawk-src.tar.gz
           
           echo "正在解壓縮原始碼..."
           tar -xzf gawk-src.tar.gz
           
           # 將解壓出來的資料夾重命名為 scripts/build.sh 所預期的 upstream/gawk
-          mv "gawk-${{ env.GAWK_VERSION }}" upstream/gawk
+          mv "gawk-${G_VER}" upstream/gawk
           rm gawk-src.tar.gz
           
           echo "原始碼準備完畢！"
@@ -65,8 +60,8 @@ jobs:
         shell: msys2 {0}
         env:
           MSYSTEM: MINGW64
-          TARGET: ${{ matrix.target }}
-          GAWK_TARGET_ARCH: ${{ matrix.arch }}
+          TARGET: "x86_64-windows"
+          GAWK_TARGET_ARCH: "x86_64"
           GAWK_OS_HINT: windows
           CC: gcc
           HOST: gcc
@@ -86,12 +81,13 @@ jobs:
         shell: msys2 {0}
         env:
           MSYSTEM: MINGW64
+          TARGET: "x86_64-windows"
         run: bash scripts/package.sh
 
       - name: Upload Temporary Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: gawk-artifacts-${{ matrix.target }}
+          name: gawk-artifacts-x86_64-windows
           path: dist/*
           retention-days: 1
 
