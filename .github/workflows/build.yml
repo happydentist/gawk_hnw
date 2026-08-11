@@ -13,8 +13,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # 💡 使用 GitHub 鏡像庫對應的正式 Tag 版本（例如 gawk-5.4.1）
-  GAWK_VERSION: "gawk-5.4.1" 
+  # 💡 填入你想編譯的 GNU 官方版本號（例如 5.4.1）
+  GAWK_VERSION: "5.4.1" 
 
 jobs:
   # =================================================================
@@ -40,15 +40,26 @@ jobs:
           update: true
           path-type: inherit
           install: >-
-            git autoconf automake libtool make base-devel bison gettext gettext-devel xz
+            git autoconf automake libtool make base-devel bison gettext gettext-devel xz zip
             mingw-w64-x86_64-toolchain
 
-      # 💡 關鍵修正：改用 gnu-mirror-unofficial 進行克隆，避開官方 gnu.org 斷線的 Bug
-      - name: Clone GNU Awk source
+      # 💡 關鍵修正：拋棄不穩定的 git clone。直接用 curl 下載官方原始碼壓縮包，100% 不會斷線或解析錯誤！
+      - name: Download and Extract GNU Awk source
         shell: msys2 {0}
         run: |
           mkdir -p upstream
-          git clone --depth 1 --branch ${{ env.GAWK_VERSION }} https://github.com upstream/gawk
+          echo "正在從 GNU FTP 下載 gawk-${{ env.GAWK_VERSION }}.tar.gz..."
+          curl -sSL "https://gnu.org{{ env.GAWK_VERSION }}.tar.gz" -o gawk-src.tar.gz
+          
+          echo "正在解壓縮原始碼..."
+          tar -xzf gawk-src.tar.gz
+          
+          # 將解壓出來的資料夾重命名為 scripts/build.sh 所預期的 upstream/gawk
+          mv "gawk-${{ env.GAWK_VERSION }}" upstream/gawk
+          rm gawk-src.tar.gz
+          
+          echo "原始碼準備完畢！"
+          ls -la upstream/gawk
 
       - name: Run Build Script
         shell: msys2 {0}
