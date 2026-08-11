@@ -12,10 +12,6 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  # 💡 填入你想編譯的 GNU 官方版本號（例如 5.4.1）
-  GAWK_VERSION: "5.4.1" 
-
 jobs:
   # =================================================================
   # Windows x86_64 平台編譯 Job
@@ -36,24 +32,22 @@ jobs:
             git autoconf automake libtool make base-devel bison gettext gettext-devel xz zip
             mingw-w64-x86_64-toolchain
 
-      # 💡 終極修正：直接在 env 區塊內拼接好最完整的 URL 與資料夾名稱，
-      # 讓 run 內部的指令完全不需要使用任何變數拼接，徹底根除 MSYS2 的網址轉譯 Bug。
+      # 💡 終極修正：直接在命令內部寫死靜態 URL 字串，不進行任何跨層級的語法變數展開
+      # 未來想換版本時，直接修改這個步驟裡面的 5.4.1 即可
       - name: Download and Extract GNU Awk source
         shell: msys2 {0}
-        env:
-          G_VER: ${{ env.GAWK_VERSION }}
-          DOWNLOAD_URL: "https://gnu.org{{ env.GAWK_VERSION }}.tar.gz"
-          DIR_NAME: "gawk-${{ env.GAWK_VERSION }}"
         run: |
           mkdir -p upstream
-          echo "正在下載原始碼..."
-          curl -sSL "$DOWNLOAD_URL" -o gawk-src.tar.gz
+          echo "正在下載官方 gawk-5.4.1 原始碼..."
+          
+          # 使用 -g 旗標關閉 curl 的大括號正則解析，並採用最純粹的靜態網址
+          curl -g -sSL "https://gnu.org" -o gawk-src.tar.gz
           
           echo "正在解壓縮原始碼..."
           tar -xzf gawk-src.tar.gz
           
-          # 直接使用預先在全域結合好的環境變數，安全完成目錄重命名
-          mv "$DIR_NAME" upstream/gawk
+          # 搬移至專案腳本預期的指定目錄下
+          mv gawk-5.4.1 upstream/gawk
           rm gawk-src.tar.gz
           
           echo "原始碼準備完畢！"
