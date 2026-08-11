@@ -1,4 +1,4 @@
-name: build-gawk-release
+name: build-gawk-windows
 
 on:
   workflow_dispatch:
@@ -12,128 +12,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# 💡 在最頂層指定你想要編編譯的 gawk 官方版本或分支
 env:
-  GAWK_VERSION: "gawk-5.4.1" # 👈 可自由更改為你想編譯的 gawk 版本（例如 gawk-5.3.1 或 master）
+  # 💡 填入你想編譯的 GNU 官方 Git Tag 版本（例如 gawk-5.4.1）
+  GAWK_VERSION: "gawk-5.4.1" 
 
 jobs:
   # =================================================================
-  # JOB 1: Linux 平台編譯
-  # =================================================================
-  build-linux:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { target: x86_64-linux-glibc, runner: ubuntu-latest, arch: x86_64 }
-          - { target: aarch64-linux-glibc, runner: ubuntu-24.04-arm, arch: aarch64 }
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - name: Checkout wrapper scripts
-        uses: actions/checkout@v4
-
-      # 💡 修正：自動下載指定版本的 gawk 原始碼並放到對應目錄
-      - name: Checkout GNU Awk source
-        uses: actions/checkout@v4
-        with:
-          repository: 'gnu-awk/gawk' # 或者是官方鏡像，或指定 git url
-          ref: ${{ env.GAWK_VERSION }}
-          path: upstream/gawk
-
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y autoconf automake libtool gettext autopoint bison \
-            libreadline-dev libgmp-dev libmpfr-dev libncurses-dev libtinfo-dev
-
-      - name: Run Build Script
-        env:
-          TARGET: ${{ matrix.target }}
-          GAWK_TARGET_ARCH: ${{ matrix.arch }}
-          GAWK_OS_HINT: linux
-          CC: gcc
-          HOST: gcc
-          JOBS: "4"
-          CFLAGS: "-O2 -static"
-          LDFLAGS: "-static"
-        run: bash scripts/build.sh
-
-      - name: Run Smoke Tests
-        run: bash scripts/smoke.sh
-
-      - name: Package Artifacts
-        run: bash scripts/package.sh
-
-      - name: Upload Temporary Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: gawk-artifacts-${{ matrix.target }}
-          path: dist/*
-          retention-days: 1
-
-  # =================================================================
-  # JOB 2: macOS 平台編譯
-  # =================================================================
-  build-macos:
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { target: x86_64-macos, runner: macos-14, arch: x86_64 }
-          - { target: aarch64-macos, runner: macos-14, arch: aarch64 }
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - name: Checkout wrapper scripts
-        uses: actions/checkout@v4
-
-      # 💡 修正：自動下載指定版本的 gawk 原始碼並放到對應目錄
-      - name: Checkout GNU Awk source
-        uses: actions/checkout@v4
-        with:
-          repository: 'gnu-awk/gawk'
-          ref: ${{ env.GAWK_VERSION }}
-          path: upstream/gawk
-
-      - name: Install Dependencies
-        run: |
-          brew update
-          brew install autoconf automake libtool bison gettext readline gmp mpfr
-
-      - name: Run Build Script
-        run: |
-          BREW_PREFIX=$(brew --prefix)
-          RL_DIR="$BREW_PREFIX/opt/readline"
-          MPFR_DIR="$BREW_PREFIX/opt/mpfr"
-          GMP_DIR="$BREW_PREFIX/opt/gmp"
-          
-          export TARGET="${{ matrix.target }}"
-          export GAWK_TARGET_ARCH="${{ matrix.arch }}"
-          export GAWK_OS_HINT="darwin"
-          export CC="clang"
-          export HOST="clang"
-          export JOBS="4"
-          export CFLAGS="-O2"
-          export LDFLAGS="-L$RL_DIR/lib -L$MPFR_DIR/lib -L$GMP_DIR/lib -Wl,-search_paths_first"
-          export CPPFLAGS="-I$RL_DIR/include -I$MPFR_DIR/include -I$GMP_DIR/include"
-          export CONFIGURE_ARGS="--disable-dependency-tracking --enable-shared --enable-extensions --with-readline=$RL_DIR --with-mpfr=$MPFR_DIR --enable-pma --disable-silent-rules"
-          
-          bash scripts/build.sh
-
-      - name: Run Smoke Tests
-        run: bash scripts/smoke.sh
-
-      - name: Package Artifacts
-        run: bash scripts/package.sh
-
-      - name: Upload Temporary Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: gawk-artifacts-${{ matrix.target }}
-          path: dist/*
-          retention-days: 1
-
-  # =================================================================
-  # JOB 3: Windows 平台編譯
+  # Windows 平台編譯 Job
   # =================================================================
   build-windows:
     strategy:
@@ -148,14 +33,6 @@ jobs:
       - name: Checkout wrapper scripts
         uses: actions/checkout@v4
 
-      # 💡 修正：自動下載指定版本的 gawk 原始碼並放到對應目錄
-      - name: Checkout GNU Awk source
-        uses: actions/checkout@v4
-        with:
-          repository: 'gnu-awk/gawk'
-          ref: ${{ env.GAWK_VERSION }}
-          path: upstream/gawk
-
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
         with:
@@ -165,6 +42,12 @@ jobs:
           install: >-
             git autoconf automake libtool make base-devel bison gettext gettext-devel xz
             mingw-w64-x86_64-toolchain
+
+      - name: Clone GNU Awk source
+        shell: msys2 {0}
+        run: |
+          mkdir -p upstream
+          git clone --depth 1 --branch ${{ env.GAWK_VERSION }} https://gnu.org upstream/gawk
 
       - name: Run Build Script
         shell: msys2 {0}
@@ -201,10 +84,10 @@ jobs:
           retention-days: 1
 
   # =================================================================
-  # JOB 4: 彙整總表並推送到 GitHub Release
+  # 彙整並推送到 GitHub Release
   # =================================================================
   publish:
-    needs: [build-linux, build-macos, build-windows]
+    needs: build-windows
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     steps:
@@ -226,7 +109,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/*.tar.gz
             dist/*.zip
             dist/*.sha256
             dist/SHA256SUMS
