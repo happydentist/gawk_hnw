@@ -36,21 +36,24 @@ jobs:
             git autoconf automake libtool make base-devel bison gettext gettext-devel xz zip
             mingw-w64-x86_64-toolchain
 
-      # 💡 透過 env 區塊傳遞變數，防止 msys2 大括號語法衝突
+      # 💡 終極修正：直接在 env 區塊內拼接好最完整的 URL 與資料夾名稱，
+      # 讓 run 內部的指令完全不需要使用任何變數拼接，徹底根除 MSYS2 的網址轉譯 Bug。
       - name: Download and Extract GNU Awk source
         shell: msys2 {0}
         env:
           G_VER: ${{ env.GAWK_VERSION }}
+          DOWNLOAD_URL: "https://gnu.org{{ env.GAWK_VERSION }}.tar.gz"
+          DIR_NAME: "gawk-${{ env.GAWK_VERSION }}"
         run: |
           mkdir -p upstream
-          echo "正在從 GNU FTP 下載 gawk-${G_VER}.tar.gz..."
-          curl -sSL "https://gnu.org{G_VER}.tar.gz" -o gawk-src.tar.gz
+          echo "正在下載原始碼..."
+          curl -sSL "$DOWNLOAD_URL" -o gawk-src.tar.gz
           
           echo "正在解壓縮原始碼..."
           tar -xzf gawk-src.tar.gz
           
-          # 將解壓出來的資料夾重命名為 scripts/build.sh 所預期的 upstream/gawk
-          mv "gawk-${G_VER}" upstream/gawk
+          # 直接使用預先在全域結合好的環境變數，安全完成目錄重命名
+          mv "$DIR_NAME" upstream/gawk
           rm gawk-src.tar.gz
           
           echo "原始碼準備完畢！"
