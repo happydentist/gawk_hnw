@@ -1,0 +1,204 @@
+name: build-gawk-release
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # =================================================================
+  # JOB 1: Linux 平台編譯 (全靜態編譯，保證 Portable)
+  # =================================================================
+  build-linux:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-linux-glibc, runner: ubuntu-latest, arch: x86_64 }
+          - { target: aarch64-linux-glibc, runner: ubuntu-24.04-arm, arch: aarch64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf automake libtool gettext autopoint bison \
+            libreadline-dev libgmp-dev libmpfr-dev libncurses-dev libtinfo-dev
+
+      - name: Run Build Script
+        env:
+          TARGET: ${{ matrix.target }}
+          GAWK_TARGET_ARCH: ${{ matrix.arch }}
+          GAWK_OS_HINT: linux
+          CC: gcc
+          HOST: gcc
+          JOBS: "4"
+          CFLAGS: "-O2 -static"
+          LDFLAGS: "-static"
+        run: bash scripts/build.sh
+
+      - name: Run Smoke Tests
+        run: bash scripts/smoke.sh
+
+      - name: Package Artifacts
+        run: bash scripts/package.sh
+
+      - name: Upload Temporary Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gawk-artifacts-${{ matrix.target }}
+          path: dist/*
+          retention-days: 1
+
+  # =================================================================
+  # JOB 2: macOS 平台編譯 (精準指定 Homebrew，防止 libedit 劫持)
+  # =================================================================
+  build-macos:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-macos, runner: macos-14, arch: x86_64 }
+          - { target: aarch64-macos, runner: macos-14, arch: aarch64 }
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          brew update
+          brew install autoconf automake libtool bison gettext readline gmp mpfr
+
+      - name: Run Build Script
+        run: |
+          BREW_PREFIX=$(brew --prefix)
+          RL_DIR="$BREW_PREFIX/opt/readline"
+          MPFR_DIR="$BREW_PREFIX/opt/mpfr"
+          GMP_DIR="$BREW_PREFIX/opt/gmp"
+          
+          export TARGET="${{ matrix.target }}"
+          export GAWK_TARGET_ARCH="${{ matrix.arch }}"
+          export GAWK_OS_HINT="darwin"
+          export CC="clang"
+          export HOST="clang"
+          export JOBS="4"
+          export CFLAGS="-O2"
+          export LDFLAGS="-L$RL_DIR/lib -L$MPFR_DIR/lib -L$GMP_DIR/lib -Wl,-search_paths_first"
+          export CPPFLAGS="-I$RL_DIR/include -I$MPFR_DIR/include -I$GMP_DIR/include"
+          export CONFIGURE_ARGS="--disable-dependency-tracking --enable-shared --enable-extensions --with-readline=$RL_DIR --with-mpfr=$MPFR_DIR --enable-pma --disable-silent-rules"
+          
+          bash scripts/build.sh
+
+      - name: Run Smoke Tests
+        run: bash scripts/smoke.sh
+
+      - name: Package Artifacts
+        run: bash scripts/package.sh
+
+      - name: Upload Temporary Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gawk-artifacts-${{ matrix.target }}
+          path: dist/*
+          retention-days: 1
+
+  # =================================================================
+  # JOB 3: Windows 平台編譯 (精準阻斷 ar.exe 衝突與關閉不相容之 Extension)
+  # =================================================================
+  build-windows:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { target: x86_64-windows, runner: windows-latest, arch: x86_64 }
+          - { target: aarch64-windows, runner: windows-11-arm, arch: aarch64 }
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: ${{ matrix.target == 'aarch64-windows' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          path-type: inherit
+          install: >-
+            git autoconf automake libtool make base-devel bison gettext gettext-devel xz
+            mingw-w64-x86_64-toolchain
+
+      - name: Run Build Script
+        shell: msys2 {0}
+        env:
+          MSYSTEM: MINGW64
+          TARGET: ${{ matrix.target }}
+          GAWK_TARGET_ARCH: ${{ matrix.arch }}
+          GAWK_OS_HINT: windows
+          CC: gcc
+          HOST: gcc
+          JOBS: "4"
+          CFLAGS: "-O2"
+          LDFLAGS: ""
+          CONFIGURE_ARGS: "--disable-dependency-tracking --enable-shared --disable-extensions --with-readline --with-mpfr --enable-pma --disable-silent-rules"
+        run: bash scripts/build.sh
+
+      - name: Run Smoke Tests
+        shell: msys2 {0}
+        env:
+          MSYSTEM: MINGW64
+        run: bash scripts/smoke.sh
+
+      - name: Package Artifacts
+        shell: msys2 {0}
+        env:
+          MSYSTEM: MINGW64
+        run: bash scripts/package.sh
+
+      - name: Upload Temporary Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gawk-artifacts-${{ matrix.target }}
+          path: dist/*
+          retention-days: 1
+
+  # =================================================================
+  # JOB 4: 彙整總表並推送到 GitHub Release
+  # =================================================================
+  publish:
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gawk-artifacts-*
+          merge-multiple: true
+          path: dist
+
+      - name: Generate top-level SHA256SUMS
+        run: |
+          cd dist
+          cat *.sha256 > SHA256SUMS 2>/dev/null || true
+          echo "=== Final Release Files ==="
+          ls -la
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/*.sha256
+            dist/SHA256SUMS
+          token: ${{ secrets.GITHUB_TOKEN }}
+          draft: false
+          prerelease: false
