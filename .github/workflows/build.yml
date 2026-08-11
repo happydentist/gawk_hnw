@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # 💡 填入你想編譯的 GNU 官方 Git Tag 版本（例如 gawk-5.4.1）
+  # 💡 使用 GitHub 鏡像庫對應的正式 Tag 版本（例如 gawk-5.4.1）
   GAWK_VERSION: "gawk-5.4.1" 
 
 jobs:
@@ -43,11 +43,12 @@ jobs:
             git autoconf automake libtool make base-devel bison gettext gettext-devel xz
             mingw-w64-x86_64-toolchain
 
+      # 💡 關鍵修正：改用 gnu-mirror-unofficial 進行克隆，避開官方 gnu.org 斷線的 Bug
       - name: Clone GNU Awk source
         shell: msys2 {0}
         run: |
           mkdir -p upstream
-          git clone --depth 1 --branch ${{ env.GAWK_VERSION }} https://gnu.org upstream/gawk
+          git clone --depth 1 --branch ${{ env.GAWK_VERSION }} https://github.com upstream/gawk
 
       - name: Run Build Script
         shell: msys2 {0}
