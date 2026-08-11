@@ -12,9 +12,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# 💡 在最頂層指定你想要編編譯的 gawk 官方版本或分支
+env:
+  GAWK_VERSION: "gawk-5.4.1" # 👈 可自由更改為你想編譯的 gawk 版本（例如 gawk-5.3.1 或 master）
+
 jobs:
   # =================================================================
-  # JOB 1: Linux 平台編譯 (全靜態編譯，保證 Portable)
+  # JOB 1: Linux 平台編譯
   # =================================================================
   build-linux:
     strategy:
@@ -25,7 +29,16 @@ jobs:
           - { target: aarch64-linux-glibc, runner: ubuntu-24.04-arm, arch: aarch64 }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout wrapper scripts
+        uses: actions/checkout@v4
+
+      # 💡 修正：自動下載指定版本的 gawk 原始碼並放到對應目錄
+      - name: Checkout GNU Awk source
+        uses: actions/checkout@v4
+        with:
+          repository: 'gnu-awk/gawk' # 或者是官方鏡像，或指定 git url
+          ref: ${{ env.GAWK_VERSION }}
+          path: upstream/gawk
 
       - name: Install Dependencies
         run: |
@@ -59,7 +72,7 @@ jobs:
           retention-days: 1
 
   # =================================================================
-  # JOB 2: macOS 平台編譯 (精準指定 Homebrew，防止 libedit 劫持)
+  # JOB 2: macOS 平台編譯
   # =================================================================
   build-macos:
     strategy:
@@ -70,7 +83,16 @@ jobs:
           - { target: aarch64-macos, runner: macos-14, arch: aarch64 }
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout wrapper scripts
+        uses: actions/checkout@v4
+
+      # 💡 修正：自動下載指定版本的 gawk 原始碼並放到對應目錄
+      - name: Checkout GNU Awk source
+        uses: actions/checkout@v4
+        with:
+          repository: 'gnu-awk/gawk'
+          ref: ${{ env.GAWK_VERSION }}
+          path: upstream/gawk
 
       - name: Install Dependencies
         run: |
@@ -111,7 +133,7 @@ jobs:
           retention-days: 1
 
   # =================================================================
-  # JOB 3: Windows 平台編譯 (精準阻斷 ar.exe 衝突與關閉不相容之 Extension)
+  # JOB 3: Windows 平台編譯
   # =================================================================
   build-windows:
     strategy:
@@ -123,7 +145,16 @@ jobs:
     runs-on: ${{ matrix.runner }}
     continue-on-error: ${{ matrix.target == 'aarch64-windows' }}
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout wrapper scripts
+        uses: actions/checkout@v4
+
+      # 💡 修正：自動下載指定版本的 gawk 原始碼並放到對應目錄
+      - name: Checkout GNU Awk source
+        uses: actions/checkout@v4
+        with:
+          repository: 'gnu-awk/gawk'
+          ref: ${{ env.GAWK_VERSION }}
+          path: upstream/gawk
 
       - name: Setup MSYS2
         uses: msys2/setup-msys2@v2
